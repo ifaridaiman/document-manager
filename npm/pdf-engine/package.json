@@ -1,0 +1,48 @@
+{
+  "name": "@documentmanager/pdf-engine",
+  "version": "0.1.0",
+  "description": "Stateless PDF inspect, text, render and region-capture engine (Go + PDFium) for Node.js",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ifaridaiman/document-manager.git",
+    "directory": "npm/pdf-engine"
+  },
+  "homepage": "https://github.com/ifaridaiman/document-manager#readme",
+  "bugs": "https://github.com/ifaridaiman/document-manager/issues",
+  "keywords": [
+    "pdf",
+    "pdfium",
+    "render",
+    "capture",
+    "evidence",
+    "llm",
+    "nextjs"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    }
+  },
+  "files": [
+    "src"
+  ],
+  "engines": {
+    "node": ">=20.6"
+  },
+  "optionalDependencies": {
+    "@documentmanager/pdf-engine-darwin-arm64": "0.1.0",
+    "@documentmanager/pdf-engine-darwin-x64": "0.1.0",
+    "@documentmanager/pdf-engine-linux-x64": "0.1.0",
+    "@documentmanager/pdf-engine-linux-arm64": "0.1.0",
+    "@documentmanager/pdf-engine-win32-x64": "0.1.0"
+  },
+  "scripts": {
+    "build": "sh scripts/build-binaries.sh",
+    "build:local": "sh scripts/build-binaries.sh local",
+    "prepare-release": "node scripts/prepare-release.mjs",
+    "test": "node --test test/*.test.js"
+  }
+}

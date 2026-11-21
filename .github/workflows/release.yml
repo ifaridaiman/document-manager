@@ -1,0 +1,64 @@
+# Publishes the npm packages and a GitHub release when a tag like v0.2.0 is pushed.
+# Uses npm trusted publishing (GitHub OIDC): no NPM_TOKEN secret. Each package must
+# list this repo + release.yml as a trusted publisher on npmjs.com.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # GitHub release
+  id-token: write # npm trusted publishing + provenance
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs a recent npm CLI.
+      - run: npm install -g npm@latest
+
+      - name: Go tests
+        run: go test ./...
+
+      - name: Build binaries (all platforms)
+        working-directory: npm/pdf-engine
+        run: npm run build
+
+      - name: Wrapper tests
+        working-directory: npm/pdf-engine
+        run: npm test
+
+      - name: Prepare packages
+        working-directory: npm/pdf-engine
+        run: npm run prepare-release -- "${GITHUB_REF_NAME#v}"
+
+      - name: Publish to npm
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          TAG=latest
+          case "$VERSION" in *-*) TAG=next ;; esac # 0.2.0-beta.1 → "next"
+          # Platform packages first, so the main package never points at missing versions.
+          for dir in npm/dist/pdf-engine-*/; do
+            npm publish "$dir" --access public --provenance --tag "$TAG"
+          done
+          npm publish npm/pdf-engine --access public --provenance --tag "$TAG"
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          FLAGS=""
+          case "$GITHUB_REF_NAME" in *-*) FLAGS="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" npm/dist/release/* --generate-notes $FLAGS

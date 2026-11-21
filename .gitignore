@@ -1,0 +1,11 @@
+# Local-only: dev playground and infra
+/playground/
+/infra/
+
+# npm build output (the release workflow regenerates all of it)
+/npm/pdf-engine/bin/
+/npm/pdf-engine/LICENSE
+/npm/dist/
+node_modules/
+
+.DS_Store
