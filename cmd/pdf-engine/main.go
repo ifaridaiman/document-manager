@@ -23,6 +23,7 @@ import (
 const usage = `usage:
   pdf-engine inspect <file.pdf> [--json]
   pdf-engine text    <file.pdf> --page N [--json]
+  pdf-engine layout  <file.pdf> --page N
   pdf-engine render  <file.pdf> --page N [--dpi 150] [--format png|jpeg] [--output page.png]
   pdf-engine capture <file.pdf> --page N --x X --y Y --width W --height H [--dpi 300] [--format png] [--output evidence.png]
   pdf-engine serve   [--addr :8080] [--max-mb 100] [--workers 4] [--timeout 30s]
@@ -108,6 +109,12 @@ func run(cmd string, args []string) error {
 		}
 		fmt.Println(t)
 		return nil
+	case "layout":
+		l, err := doc.Layout(ctx, *page)
+		if err != nil {
+			return err
+		}
+		return printJSON(l)
 	case "render":
 		res, err := doc.RenderPage(ctx, de.RenderRequest{PageNumber: *page, DPI: *dpi, Format: de.ImageFormat(*format), Options: opts})
 		if err != nil {
