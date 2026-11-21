@@ -121,6 +121,9 @@ export function createEngine(options = {}) {
     async text(pdf, opts) {
       return (await (await post("text", pdf, opts)).json()).pages;
     },
+    async layout(pdf, opts) {
+      return (await (await post("layout", pdf, opts)).json()).pages;
+    },
     async render(pdf, opts) {
       const res = await post("render", pdf, opts);
       const h = (k) => Number(res.headers.get(k));

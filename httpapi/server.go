@@ -26,6 +26,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/inspect", s.wrap("inspect", s.inspect))
 	mux.HandleFunc("POST /v1/text", s.wrap("text", s.text))
+	mux.HandleFunc("POST /v1/layout", s.wrap("layout", s.layout))
 	mux.HandleFunc("POST /v1/render", s.wrap("render", s.render))
 	mux.HandleFunc("POST /v1/capture", s.wrap("capture", s.capture))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
@@ -100,6 +101,25 @@ func (s *Server) inspect(c *call) error {
 }
 
 // text accepts page=N or pages=A-B.
+// layout accepts page=N or pages=A-B and returns each page's text lines with
+// normalized boxes, ready to pass to /v1/capture.
+func (s *Server) layout(c *call) error {
+	from, to, err := pageRange(c.r, c.doc.Metadata.PageCount)
+	if err != nil {
+		return err
+	}
+	c.log = append(c.log, "pageFrom", from, "pageTo", to)
+	pages := []de.PageLayout{}
+	for p := from; p <= to; p++ {
+		l, err := c.doc.Layout(c.r.Context(), p)
+		if err != nil {
+			return err
+		}
+		pages = append(pages, l)
+	}
+	return writeJSON(c.w, 200, map[string]any{"pages": pages})
+}
+
 func (s *Server) text(c *call) error {
 	from, to, err := pageRange(c.r, c.doc.Metadata.PageCount)
 	if err != nil {

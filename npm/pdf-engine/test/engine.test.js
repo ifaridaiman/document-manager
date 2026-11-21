@@ -47,6 +47,19 @@ test("inspect, text, render, capture", async () => {
   assert.equal(c.image.subarray(1, 4).toString(), "PNG");
 });
 
+test("layout boxes plug into capture", async () => {
+  const [page] = await engine.layout(pdf, { page: 1 });
+  assert.equal(page.pageNumber, 1);
+  assert.equal(page.lines.length, 1);
+  const [line] = page.lines;
+  assert.equal(line.index, 0);
+  assert.equal(line.text, "Revenue increased by 18%");
+  assert.ok(line.region.x > 0.1 && line.region.x < 0.13, `x ${line.region.x}`);
+
+  const c = await engine.capture(pdf, { page: 1, ...line.region, dpi: 72 });
+  assert.match(c.reference.excerpt, /Revenue increased by 18%/);
+});
+
 test("structured errors", async () => {
   await assert.rejects(engine.capture(pdf, { page: 1, x: 0.5, y: 0, width: 0.8, height: 0.1 }), (e) => {
     assert.ok(e instanceof PdfEngineError);
