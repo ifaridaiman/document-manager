@@ -116,6 +116,7 @@ Create one `Engine` per process and share it. It is safe for concurrent use; eac
 | `doc.Inspect()`                          | Title, author, subject, creator, producer, dates, page count, encryption, size |
 | `doc.GetPageInfo(ctx, page)`             | Width and height in points, rotation, whether the page has a text layer        |
 | `doc.ExtractText(ctx, page)`             | Plain text of one page (`""` for scanned pages)                                |
+| `doc.Layout(ctx, page)`                  | Text lines with exact normalized boxes (empty for scanned pages)               |
 | `doc.RenderPage(ctx, RenderRequest)`     | Whole page as PNG or JPEG                                                      |
 | `doc.CaptureRegion(ctx, CaptureRequest)` | Cropped image + `EvidenceReference` (including the text inside the region)     |
 
@@ -130,6 +131,7 @@ go install github.com/ifaridaiman/document-manager/cmd/pdf-engine@latest
 ```bash
 pdf-engine inspect report.pdf
 pdf-engine text    report.pdf --page 14 [--json]
+pdf-engine layout  report.pdf --page 14
 pdf-engine render  report.pdf --page 14 --dpi 150 --output page-14.png
 pdf-engine capture report.pdf --page 14 --x 0.12 --y 0.25 --width 0.76 --height 0.32 \
                    --dpi 300 --format png --output evidence.png
@@ -150,6 +152,7 @@ Every endpoint takes `multipart/form-data` with the PDF in a `file` field. The s
 | ------------------ | --------------------------------------------------------------------------- | --------------------------------------------------------------- |
 | `POST /v1/inspect` | `file`                                                                      | `{ document: { id, filename, size, pageCount, metadata } }`     |
 | `POST /v1/text`    | `file`, `page` or `pages=3-7`                                               | `{ pages: [{ pageNumber, text }] }`                             |
+| `POST /v1/layout`  | `file`, `page` or `pages=3-7`                                               | `{ pages: [{ pageNumber, width, height, rotation, lines: [{ index, text, region }] }] }` |
 | `POST /v1/render`  | `file`, `page`, `dpi`, `format`, image options                              | Image bytes; size in `X-Image-Width` / `X-Image-Height` headers |
 | `POST /v1/capture` | `file`, `page`, `x`, `y`, `width`, `height`, `dpi`, `format`, image options | `{ reference, image }` (image is base64)                        |
 | `GET /healthz`     |                                                                             | `ok`                                                            |
@@ -198,6 +201,7 @@ const pdf = await fs.promises.readFile("report.pdf");
 
 const doc = await engine.inspect(pdf, { filename: "report.pdf" });
 const pages = await engine.text(pdf, { pages: "1-5" });
+const [layout] = await engine.layout(pdf, { page: 14 }); // lines: [{ index, text, region }]
 const { image, reference } = await engine.capture(pdf, {
   page: 14,
   x: 0.12,
@@ -306,7 +310,6 @@ Contributions are welcome. Please open an issue to discuss larger changes first,
 
 ## Roadmap
 
-- `locate`: find a quoted sentence on a page and return its regions, so an LLM can cite text and the engine supplies exact coordinates
 - `pages`: size, rotation and text availability of every page in one call
 - OCR for scanned pages
 - MCP server adapter for LLM agents
