@@ -67,6 +67,25 @@ export interface Region {
   height: number;
 }
 
+/** One run of text as PDFium groups it (usually a line). */
+export interface TextLine {
+  /** 0-based position in the page's line list; stable for the same PDF. */
+  index: number;
+  text: string;
+  /** Normalized box, ready to pass to capture(). */
+  region: Region;
+}
+
+export interface PageLayout {
+  pageNumber: number;
+  /** Points, as displayed (rotation applied). */
+  width: number;
+  height: number;
+  rotation: number;
+  /** Empty for pages without a text layer (scanned pages). */
+  lines: TextLine[];
+}
+
 export interface EvidenceReference {
   documentId: string;
   filename: string;
@@ -102,6 +121,8 @@ export interface PdfEngine {
   inspect(pdf: PdfInput, opts?: CallOptions): Promise<InspectResult>;
   /** Pass `page` for one page or `pages: "3-7"` for a range. */
   text(pdf: PdfInput, opts: CallOptions & ({ page: number } | { pages: string })): Promise<PageText[]>;
+  /** Text lines with exact boxes. Pass `page` for one page or `pages: "3-7"` for a range. */
+  layout(pdf: PdfInput, opts: CallOptions & ({ page: number } | { pages: string })): Promise<PageLayout[]>;
   render(pdf: PdfInput, opts: CallOptions & ImageOptions & { page: number }): Promise<RenderResult>;
   capture(pdf: PdfInput, opts: CallOptions & ImageOptions & Region & { page: number }): Promise<CaptureResult>;
   /** Stop the engine process. The next call starts it again. */
