@@ -96,7 +96,8 @@ func (e *Engine) OpenBytes(ctx context.Context, filename string, data []byte) (*
 	defer cancel()
 	inst, err := e.pool.GetInstanceWithContext(ctx)
 	if err != nil {
-		return nil, newErr(ErrResourceLimit, "no PDF worker available", "cause", err.Error())
+		// Not the caller's fault: the server is at capacity, so retrying can succeed.
+		return nil, newErr(ErrEngineBusy, "all PDF workers are busy, retry later", "cause", err.Error())
 	}
 
 	d := &Document{
