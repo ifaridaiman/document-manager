@@ -1,6 +1,6 @@
 module github.com/ifaridaiman/document-manager
 
-go 1.27.3
+go 1.27.4
 
 require (
 	github.com/klippa-app/go-pdfium v1.21.5
