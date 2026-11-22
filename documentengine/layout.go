@@ -84,8 +84,9 @@ func (d *Document) Layout(ctx context.Context, pageNumber int) (PageLayout, erro
 				if !ok1 || !ok2 {
 					continue
 				}
-				x0, y0 := clamp01(math.Min(x1, x2)), clamp01(math.Min(y1, y2))
-				w, h := clamp01(math.Max(x1, x2))-x0, clamp01(math.Max(y1, y2))-y0
+				// Clamp to the page; a box entirely off-page ends up with w or h <= 0.
+				x0, y0 := max(0, min(x1, x2)), max(0, min(y1, y2))
+				w, h := min(1, max(x1, x2))-x0, min(1, max(y1, y2))-y0
 				if w <= 0 || h <= 0 {
 					continue
 				}
@@ -100,5 +101,3 @@ func (d *Document) Layout(ctx context.Context, pageNumber int) (PageLayout, erro
 	})
 	return out, err
 }
-
-func clamp01(v float64) float64 { return math.Min(1, math.Max(0, v)) }

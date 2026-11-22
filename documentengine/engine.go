@@ -8,6 +8,7 @@ package documentengine
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -41,22 +42,13 @@ type Config struct {
 }
 
 func (c Config) withDefaults() Config {
-	def := func(v *int, d int) {
-		if *v <= 0 {
-			*v = d
-		}
-	}
-	if c.MaxFileSize <= 0 {
-		c.MaxFileSize = 100 << 20
-	}
-	def(&c.MaxPages, 5000)
-	def(&c.DefaultDPI, 150)
-	def(&c.MaxDPI, 600)
-	def(&c.MaxPixels, 60_000_000)
-	def(&c.Workers, 4)
-	if c.Timeout <= 0 {
-		c.Timeout = 30 * time.Second
-	}
+	c.MaxFileSize = cmp.Or(c.MaxFileSize, 100<<20)
+	c.MaxPages = cmp.Or(c.MaxPages, 5000)
+	c.DefaultDPI = cmp.Or(c.DefaultDPI, 150)
+	c.MaxDPI = cmp.Or(c.MaxDPI, 600)
+	c.MaxPixels = cmp.Or(c.MaxPixels, 60_000_000)
+	c.Workers = cmp.Or(c.Workers, 4)
+	c.Timeout = cmp.Or(c.Timeout, 30*time.Second)
 	return c
 }
 
@@ -282,8 +274,8 @@ func (d *Document) CaptureRegion(ctx context.Context, req CaptureRequest) (Captu
 }
 
 type raster struct {
-	data       []byte
-	mime       string
+	data      []byte
+	mime      string
 	w, h, dpi int
 }
 
@@ -378,8 +370,8 @@ func (d *Document) regionText(p requests.Page, r Region) string {
 	defer d.inst.FPDFText_ClosePage(&requests.FPDFText_ClosePage{TextPage: tp.TextPage})
 	res, err := d.inst.FPDFText_GetBoundedText(&requests.FPDFText_GetBoundedText{
 		TextPage: tp.TextPage,
-		Left:     math.Min(x1, x2), Right: math.Max(x1, x2),
-		Top: math.Max(y1, y2), Bottom: math.Min(y1, y2),
+		Left:     min(x1, x2), Right: max(x1, x2),
+		Top: max(y1, y2), Bottom: min(y1, y2),
 	})
 	if err != nil {
 		return ""
