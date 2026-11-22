@@ -179,6 +179,7 @@ const (
 	ErrCaptureFailed        ErrorCode = "CAPTURE_FAILED"
 	ErrProcessingTimeout    ErrorCode = "PROCESSING_TIMEOUT"
 	ErrResourceLimit        ErrorCode = "RESOURCE_LIMIT"
+	ErrEngineBusy           ErrorCode = "ENGINE_BUSY" // every worker in use; retry later
 	ErrInternal             ErrorCode = "INTERNAL_ERROR"
 )
 
