@@ -318,4 +318,6 @@ Contributions are welcome. Please open an issue to discuss larger changes first,
 
 [MIT](LICENSE)
 
+The binaries include PDFium and other third-party software under their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). This software is based in part on the work of the Independent JPEG Group. Portions of this software are copyright © The FreeType Project (https://freetype.org). All rights reserved.
+
 Third-party components keep their own licenses, including [go-pdfium](https://github.com/klippa-app/go-pdfium) and [PDFium](https://pdfium.googlesource.com/pdfium/).

@@ -27,7 +27,8 @@
     }
   },
   "files": [
-    "src"
+    "src",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "engines": {
     "node": ">=20.6"
