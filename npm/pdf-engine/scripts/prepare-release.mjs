@@ -31,6 +31,7 @@ for (const target of targets) {
   mkdirSync(`${out}/bin`, { recursive: true });
   copyFileSync(src, `${out}/bin/${exe}`); // keeps the executable bit
   copyFileSync(`${root}LICENSE`, `${out}/LICENSE`);
+  copyFileSync(`${root}THIRD_PARTY_NOTICES.md`, `${out}/THIRD_PARTY_NOTICES.md`); // PDFium & co. ship inside the binary
   writeFileSync(`${out}/README.md`, `The ${target} binary for [${main.name}](https://www.npmjs.com/package/${main.name}). Install that package instead.\n`);
   writeFileSync(`${out}/package.json`, JSON.stringify({
     name: `${main.name}-${target}`,
@@ -40,7 +41,7 @@ for (const target of targets) {
     repository: main.repository,
     os: [os],
     cpu: [cpu],
-    files: ["bin"],
+    files: ["bin", "THIRD_PARTY_NOTICES.md"],
     preferUnplugged: true,
   }, null, 2) + "\n");
 
@@ -51,5 +52,7 @@ main.version = version;
 main.optionalDependencies = Object.fromEntries(targets.map((t) => [`${main.name}-${t}`, version]));
 writeFileSync(mainPath, JSON.stringify(main, null, 2) + "\n");
 copyFileSync(`${root}LICENSE`, `${pkgDir}LICENSE`);
+copyFileSync(`${root}THIRD_PARTY_NOTICES.md`, `${pkgDir}THIRD_PARTY_NOTICES.md`);
+copyFileSync(`${root}THIRD_PARTY_NOTICES.md`, `${dist}/release/THIRD_PARTY_NOTICES.md`);
 
 console.log(`prepared ${main.name}@${version} + ${targets.length} platform packages in ${dist}`);

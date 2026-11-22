@@ -33,4 +33,4 @@ Regions are normalized (0–1) from the top-left of the page as displayed. Error
 
 Full documentation, the HTTP API and the Go library: [github.com/ifaridaiman/document-manager](https://github.com/ifaridaiman/document-manager).
 
-MIT licensed.
+MIT licensed. The bundled binary includes PDFium and other third-party components under their own licenses; see THIRD_PARTY_NOTICES.md in this package.

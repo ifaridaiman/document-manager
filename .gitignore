@@ -5,6 +5,7 @@
 # npm build output (the release workflow regenerates all of it)
 /npm/pdf-engine/bin/
 /npm/pdf-engine/LICENSE
+/npm/pdf-engine/THIRD_PARTY_NOTICES.md
 /npm/dist/
 node_modules/
 

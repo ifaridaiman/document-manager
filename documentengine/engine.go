@@ -8,6 +8,7 @@ package documentengine
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -41,22 +42,13 @@ type Config struct {
 }
 
 func (c Config) withDefaults() Config {
-	def := func(v *int, d int) {
-		if *v <= 0 {
-			*v = d
-		}
-	}
-	if c.MaxFileSize <= 0 {
-		c.MaxFileSize = 100 << 20
-	}
-	def(&c.MaxPages, 5000)
-	def(&c.DefaultDPI, 150)
-	def(&c.MaxDPI, 600)
-	def(&c.MaxPixels, 60_000_000)
-	def(&c.Workers, 4)
-	if c.Timeout <= 0 {
-		c.Timeout = 30 * time.Second
-	}
+	c.MaxFileSize = cmp.Or(c.MaxFileSize, 100<<20)
+	c.MaxPages = cmp.Or(c.MaxPages, 5000)
+	c.DefaultDPI = cmp.Or(c.DefaultDPI, 150)
+	c.MaxDPI = cmp.Or(c.MaxDPI, 600)
+	c.MaxPixels = cmp.Or(c.MaxPixels, 60_000_000)
+	c.Workers = cmp.Or(c.Workers, 4)
+	c.Timeout = cmp.Or(c.Timeout, 30*time.Second)
 	return c
 }
 
@@ -104,7 +96,8 @@ func (e *Engine) OpenBytes(ctx context.Context, filename string, data []byte) (*
 	defer cancel()
 	inst, err := e.pool.GetInstanceWithContext(ctx)
 	if err != nil {
-		return nil, newErr(ErrResourceLimit, "no PDF worker available", "cause", err.Error())
+		// Not the caller's fault: the server is at capacity, so retrying can succeed.
+		return nil, newErr(ErrEngineBusy, "all PDF workers are busy, retry later").wrap(err)
 	}
 
 	d := &Document{
@@ -113,6 +106,7 @@ func (e *Engine) OpenBytes(ctx context.Context, filename string, data []byte) (*
 		Size:     int64(len(data)),
 		engine:   e,
 		inst:     inst,
+		turn:     make(chan struct{}, 1),
 	}
 	err = d.do(ctx, func() error {
 		res, err := inst.OpenDocument(&requests.OpenDocument{File: &data})
@@ -132,17 +126,18 @@ func (e *Engine) OpenBytes(ctx context.Context, filename string, data []byte) (*
 func openErr(err error) error {
 	switch {
 	case errors.Is(err, pdfiumerrors.ErrPassword):
-		return newErr(ErrPDFEncrypted, "PDF is password protected")
+		return newErr(ErrPDFEncrypted, "PDF is password protected").wrap(err)
 	case errors.Is(err, pdfiumerrors.ErrSecurity):
-		return newErr(ErrPDFUnsupported, "unsupported PDF security handler")
+		return newErr(ErrPDFUnsupported, "unsupported PDF security handler").wrap(err)
 	case errors.Is(err, pdfiumerrors.ErrFormat), errors.Is(err, pdfiumerrors.ErrFile):
-		return newErr(ErrInvalidPDF, "file is not a valid PDF")
+		return newErr(ErrInvalidPDF, "file is not a valid PDF").wrap(err)
 	default:
-		return newErr(ErrPDFUnsupported, "PDF cannot be processed", "cause", err.Error())
+		return newErr(ErrPDFUnsupported, "PDF cannot be processed").wrap(err)
 	}
 }
 
-// Document is an open PDF. Methods are safe for concurrent use.
+// Document is an open PDF. Methods are safe for concurrent use, but calls on one
+// Document run one at a time. For parallel work, open one Document per goroutine.
 type Document struct {
 	ID       string           `json:"id"`
 	Filename string           `json:"filename"`
@@ -152,7 +147,8 @@ type Document struct {
 	engine *Engine
 	inst   pdfium.Pdfium
 	doc    references.FPDF_DOCUMENT
-	mu     sync.Mutex
+	turn   chan struct{} // capacity 1: one PDFium operation at a time (see do)
+	mu     sync.Mutex    // guards dead
 	dead   bool
 }
 
@@ -203,7 +199,7 @@ func (d *Document) GetPageInfo(ctx context.Context, pageNumber int) (PageInfo, e
 		return d.withPage(pageNumber, func(p requests.Page) error {
 			size, err := d.inst.GetPageSize(&requests.GetPageSize{Page: p})
 			if err != nil {
-				return newErr(ErrInternal, "cannot read page size")
+				return newErr(ErrInternal, "cannot read page size").wrap(err)
 			}
 			info = PageInfo{PageNumber: pageNumber, Width: size.Width, Height: size.Height}
 			if rot, err := d.inst.FPDFPage_GetRotation(&requests.FPDFPage_GetRotation{Page: p}); err == nil {
@@ -228,7 +224,7 @@ func (d *Document) ExtractText(ctx context.Context, pageNumber int) (string, err
 		return d.withPage(pageNumber, func(p requests.Page) error {
 			res, err := d.inst.GetPageText(&requests.GetPageText{Page: p})
 			if err != nil {
-				return newErr(ErrTextExtractionFailed, "text extraction failed", "pageNumber", pageNumber)
+				return newErr(ErrTextExtractionFailed, "text extraction failed", "pageNumber", pageNumber).wrap(err)
 			}
 			text = res.Text
 			return nil
@@ -282,8 +278,8 @@ func (d *Document) CaptureRegion(ctx context.Context, req CaptureRequest) (Captu
 }
 
 type raster struct {
-	data       []byte
-	mime       string
+	data      []byte
+	mime      string
 	w, h, dpi int
 }
 
@@ -306,7 +302,7 @@ func (d *Document) rasterize(p requests.Page, region *Region, dpi int, format Im
 
 	size, err := d.inst.GetPageSize(&requests.GetPageSize{Page: p})
 	if err != nil {
-		return raster{}, newErr(failCode, "cannot read page size")
+		return raster{}, newErr(failCode, "cannot read page size").wrap(err)
 	}
 	// Page size is already rotation-aware, so normalized coords map to the page as displayed.
 	wPt, hPt := size.Width, size.Height
@@ -334,14 +330,14 @@ func (d *Document) rasterize(p requests.Page, region *Region, dpi int, format Im
 	}
 	res, err := d.inst.RenderPageInDPI(&requests.RenderPageInDPI{Page: p, DPI: dpi, Crop: crop, ImageFormat: imgFormat, RenderFlags: enums.FPDF_RENDER_FLAG_ANNOT})
 	if err != nil {
-		return raster{}, newErr(failCode, "render failed")
+		return raster{}, newErr(failCode, "render failed").wrap(err)
 	}
 	defer res.Cleanup() // pixel buffer lives in wasm memory; encode before this runs
 
 	img := rotate(res.Result.RenderedImage, opt.Rotate)
 	data, err := encode(img, format, opt.Quality)
 	if err != nil {
-		return raster{}, newErr(failCode, "image encoding failed")
+		return raster{}, newErr(failCode, "image encoding failed").wrap(err)
 	}
 	b := img.Bounds()
 	return raster{data: data, mime: mime, w: b.Dx(), h: b.Dy(), dpi: dpi}, nil
@@ -378,8 +374,8 @@ func (d *Document) regionText(p requests.Page, r Region) string {
 	defer d.inst.FPDFText_ClosePage(&requests.FPDFText_ClosePage{TextPage: tp.TextPage})
 	res, err := d.inst.FPDFText_GetBoundedText(&requests.FPDFText_GetBoundedText{
 		TextPage: tp.TextPage,
-		Left:     math.Min(x1, x2), Right: math.Max(x1, x2),
-		Top: math.Max(y1, y2), Bottom: math.Min(y1, y2),
+		Left:     min(x1, x2), Right: max(x1, x2),
+		Top: max(y1, y2), Bottom: min(y1, y2),
 	})
 	if err != nil {
 		return ""
@@ -401,7 +397,7 @@ func (d *Document) withPage(n int, fn func(p requests.Page) error) error {
 	}
 	res, err := d.inst.FPDF_LoadPage(&requests.FPDF_LoadPage{Document: d.doc, Index: n - 1})
 	if err != nil {
-		return newErr(ErrPDFUnsupported, "page cannot be loaded", "pageNumber", n)
+		return newErr(ErrPDFUnsupported, "page cannot be loaded", "pageNumber", n).wrap(err)
 	}
 	defer d.inst.FPDF_ClosePage(&requests.FPDF_ClosePage{Page: res.Page})
 	return fn(requests.Page{ByReference: &res.Page})
@@ -409,20 +405,34 @@ func (d *Document) withPage(n int, fn func(p requests.Page) error) error {
 
 // do runs fn with the configured timeout. On timeout the wasm instance is
 // killed (a hostile PDF can't keep burning CPU) and the document becomes unusable.
+//
+// Operations on one Document run one at a time: PDFium is single-threaded per
+// instance, and go-pdfium frees render buffers outside its own lock, so
+// overlapping calls race. Waiting for the turn honours ctx but never kills the
+// worker: a queued call is not hung work.
 func (d *Document) do(ctx context.Context, fn func() error) error {
+	select {
+	case d.turn <- struct{}{}:
+	case <-ctx.Done():
+		return newErr(ErrProcessingTimeout, "cancelled while waiting for the document")
+	}
 	d.mu.Lock()
 	dead := d.dead
 	d.mu.Unlock()
 	if dead {
+		<-d.turn
 		return newErr(ErrInternal, "document is closed")
 	}
 	ctx, cancel := context.WithTimeout(ctx, d.engine.cfg.Timeout)
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
+		// Released only when fn really returns, even after a timeout, so the next
+		// operation never overlaps work that is still unwinding.
+		defer func() { <-d.turn }()
 		defer func() {
 			if r := recover(); r != nil {
-				done <- newErr(ErrInternal, "PDF processing crashed")
+				done <- newErr(ErrInternal, "PDF processing crashed").wrap(fmt.Errorf("panic: %v", r))
 			}
 		}()
 		done <- fn()
@@ -441,8 +451,17 @@ func (d *Document) do(ctx context.Context, fn func() error) error {
 	}
 }
 
-// Close releases the document and its worker. Safe to call more than once.
+// Close releases the document and its worker. Safe to call more than once and
+// concurrently with other methods: it waits for a running operation to finish.
 func (d *Document) Close() error {
+	d.mu.Lock()
+	dead := d.dead
+	d.mu.Unlock()
+	if dead {
+		return nil // already closed, or killed after a timeout (worker already freed)
+	}
+	d.turn <- struct{}{}
+	defer func() { <-d.turn }()
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.dead {
