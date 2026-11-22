@@ -96,7 +96,7 @@ func (e *Engine) OpenBytes(ctx context.Context, filename string, data []byte) (*
 	defer cancel()
 	inst, err := e.pool.GetInstanceWithContext(ctx)
 	if err != nil {
-		return nil, newErr(ErrResourceLimit, "no PDF worker available", "cause", err.Error())
+		return nil, newErr(ErrResourceLimit, "no PDF worker available").wrap(err)
 	}
 
 	d := &Document{
@@ -124,13 +124,13 @@ func (e *Engine) OpenBytes(ctx context.Context, filename string, data []byte) (*
 func openErr(err error) error {
 	switch {
 	case errors.Is(err, pdfiumerrors.ErrPassword):
-		return newErr(ErrPDFEncrypted, "PDF is password protected")
+		return newErr(ErrPDFEncrypted, "PDF is password protected").wrap(err)
 	case errors.Is(err, pdfiumerrors.ErrSecurity):
-		return newErr(ErrPDFUnsupported, "unsupported PDF security handler")
+		return newErr(ErrPDFUnsupported, "unsupported PDF security handler").wrap(err)
 	case errors.Is(err, pdfiumerrors.ErrFormat), errors.Is(err, pdfiumerrors.ErrFile):
-		return newErr(ErrInvalidPDF, "file is not a valid PDF")
+		return newErr(ErrInvalidPDF, "file is not a valid PDF").wrap(err)
 	default:
-		return newErr(ErrPDFUnsupported, "PDF cannot be processed", "cause", err.Error())
+		return newErr(ErrPDFUnsupported, "PDF cannot be processed").wrap(err)
 	}
 }
 
@@ -195,7 +195,7 @@ func (d *Document) GetPageInfo(ctx context.Context, pageNumber int) (PageInfo, e
 		return d.withPage(pageNumber, func(p requests.Page) error {
 			size, err := d.inst.GetPageSize(&requests.GetPageSize{Page: p})
 			if err != nil {
-				return newErr(ErrInternal, "cannot read page size")
+				return newErr(ErrInternal, "cannot read page size").wrap(err)
 			}
 			info = PageInfo{PageNumber: pageNumber, Width: size.Width, Height: size.Height}
 			if rot, err := d.inst.FPDFPage_GetRotation(&requests.FPDFPage_GetRotation{Page: p}); err == nil {
@@ -220,7 +220,7 @@ func (d *Document) ExtractText(ctx context.Context, pageNumber int) (string, err
 		return d.withPage(pageNumber, func(p requests.Page) error {
 			res, err := d.inst.GetPageText(&requests.GetPageText{Page: p})
 			if err != nil {
-				return newErr(ErrTextExtractionFailed, "text extraction failed", "pageNumber", pageNumber)
+				return newErr(ErrTextExtractionFailed, "text extraction failed", "pageNumber", pageNumber).wrap(err)
 			}
 			text = res.Text
 			return nil
@@ -298,7 +298,7 @@ func (d *Document) rasterize(p requests.Page, region *Region, dpi int, format Im
 
 	size, err := d.inst.GetPageSize(&requests.GetPageSize{Page: p})
 	if err != nil {
-		return raster{}, newErr(failCode, "cannot read page size")
+		return raster{}, newErr(failCode, "cannot read page size").wrap(err)
 	}
 	// Page size is already rotation-aware, so normalized coords map to the page as displayed.
 	wPt, hPt := size.Width, size.Height
@@ -326,14 +326,14 @@ func (d *Document) rasterize(p requests.Page, region *Region, dpi int, format Im
 	}
 	res, err := d.inst.RenderPageInDPI(&requests.RenderPageInDPI{Page: p, DPI: dpi, Crop: crop, ImageFormat: imgFormat, RenderFlags: enums.FPDF_RENDER_FLAG_ANNOT})
 	if err != nil {
-		return raster{}, newErr(failCode, "render failed")
+		return raster{}, newErr(failCode, "render failed").wrap(err)
 	}
 	defer res.Cleanup() // pixel buffer lives in wasm memory; encode before this runs
 
 	img := rotate(res.Result.RenderedImage, opt.Rotate)
 	data, err := encode(img, format, opt.Quality)
 	if err != nil {
-		return raster{}, newErr(failCode, "image encoding failed")
+		return raster{}, newErr(failCode, "image encoding failed").wrap(err)
 	}
 	b := img.Bounds()
 	return raster{data: data, mime: mime, w: b.Dx(), h: b.Dy(), dpi: dpi}, nil
@@ -393,7 +393,7 @@ func (d *Document) withPage(n int, fn func(p requests.Page) error) error {
 	}
 	res, err := d.inst.FPDF_LoadPage(&requests.FPDF_LoadPage{Document: d.doc, Index: n - 1})
 	if err != nil {
-		return newErr(ErrPDFUnsupported, "page cannot be loaded", "pageNumber", n)
+		return newErr(ErrPDFUnsupported, "page cannot be loaded", "pageNumber", n).wrap(err)
 	}
 	defer d.inst.FPDF_ClosePage(&requests.FPDF_ClosePage{Page: res.Page})
 	return fn(requests.Page{ByReference: &res.Page})
@@ -414,7 +414,7 @@ func (d *Document) do(ctx context.Context, fn func() error) error {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				done <- newErr(ErrInternal, "PDF processing crashed")
+				done <- newErr(ErrInternal, "PDF processing crashed").wrap(fmt.Errorf("panic: %v", r))
 			}
 		}()
 		done <- fn()
