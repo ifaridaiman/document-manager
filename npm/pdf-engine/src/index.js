@@ -6,9 +6,19 @@ import { accessSync, chmodSync, constants, existsSync } from "node:fs";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 
+// A global brand instead of class identity: bundlers, hot reload and duplicate
+// installs can load this module twice, and the shared engine (globalThis) may
+// throw errors built by the other copy's class. `instanceof` must still match.
+const BRAND = Symbol.for("@documentmanager/pdf-engine/PdfEngineError");
+
 export class PdfEngineError extends Error {
+  static [Symbol.hasInstance](value) {
+    return value?.[BRAND] === true;
+  }
+
   constructor(code, message, details, status) {
     super(message);
+    this[BRAND] = true;
     this.name = "PdfEngineError";
     this.code = code;
     this.details = details;
