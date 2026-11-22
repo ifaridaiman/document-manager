@@ -165,13 +165,32 @@ func parsePDFDate(s string) *time.Time {
 }
 
 // Error is the structured error returned by every engine operation.
+//
+// Code, Message and Details are safe to show to API clients. The underlying
+// cause (a PDFium error, a recovered panic) is kept out of JSON; it is reachable
+// with errors.Unwrap / errors.Is / errors.As and included in Error() for logs.
 type Error struct {
 	Code    ErrorCode      `json:"code"`
 	Message string         `json:"message"`
 	Details map[string]any `json:"details,omitempty"`
+	cause   error
 }
 
-func (e *Error) Error() string { return fmt.Sprintf("%s: %s", e.Code, e.Message) }
+func (e *Error) Error() string {
+	if e.cause != nil {
+		return fmt.Sprintf("%s: %s: %v", e.Code, e.Message, e.cause)
+	}
+	return fmt.Sprintf("%s: %s", e.Code, e.Message)
+}
+
+// Unwrap returns the underlying cause, if any.
+func (e *Error) Unwrap() error { return e.cause }
+
+// wrap attaches the underlying cause and returns e.
+func (e *Error) wrap(cause error) *Error {
+	e.cause = cause
+	return e
+}
 
 type ErrorCode string
 
