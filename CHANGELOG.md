@@ -16,6 +16,8 @@ uses the section as the GitHub release notes.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-22
+
 ### Added
 
 - `ENGINE_BUSY` error code. When every PDF worker is in use, the engine returns
@@ -95,6 +97,7 @@ First release, published to npm by hand.
 > The `v0.1.1` git tag points at the repository's first commit, which contains
 > only the README. It is not a release: skip it.
 
-[Unreleased]: https://github.com/ifaridaiman/document-manager/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/ifaridaiman/document-manager/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/ifaridaiman/document-manager/releases/tag/v0.2.1
 [0.2.0]: https://github.com/ifaridaiman/document-manager/releases/tag/v0.2.0
 [0.1.0]: https://www.npmjs.com/package/@documentmanager/pdf-engine/v/0.1.0
