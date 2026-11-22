@@ -35,7 +35,7 @@ func (d *Document) Layout(ctx context.Context, pageNumber int) (PageLayout, erro
 		return d.withPage(pageNumber, func(p requests.Page) error {
 			size, err := d.inst.GetPageSize(&requests.GetPageSize{Page: p})
 			if err != nil {
-				return newErr(ErrTextExtractionFailed, "cannot read page size", "pageNumber", pageNumber)
+				return newErr(ErrTextExtractionFailed, "cannot read page size", "pageNumber", pageNumber).wrap(err)
 			}
 			// Lines starts non-nil so a scanned page encodes as [] in JSON, not null.
 			out = PageLayout{PageNumber: pageNumber, Width: size.Width, Height: size.Height, Lines: []TextLine{}}
@@ -45,7 +45,7 @@ func (d *Document) Layout(ctx context.Context, pageNumber int) (PageLayout, erro
 
 			tp, err := d.inst.FPDFText_LoadPage(&requests.FPDFText_LoadPage{Page: p})
 			if err != nil {
-				return newErr(ErrTextExtractionFailed, "cannot load text layer", "pageNumber", pageNumber)
+				return newErr(ErrTextExtractionFailed, "cannot load text layer", "pageNumber", pageNumber).wrap(err)
 			}
 			defer d.inst.FPDFText_ClosePage(&requests.FPDFText_ClosePage{TextPage: tp.TextPage})
 
