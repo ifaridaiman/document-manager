@@ -260,6 +260,7 @@ Every failure is a structured error with a stable code:
 | `PAGE_NOT_FOUND`                                                              | 422  | Page number outside the document                          |
 | `RESOURCE_LIMIT`                                                              | 422  | Too many pages, or the image would exceed the pixel limit |
 | `PROCESSING_TIMEOUT`                                                          | 504  | Operation took longer than the timeout                    |
+| `ENGINE_BUSY`                                                                 | 503  | Every PDF worker is in use; retry after `Retry-After`     |
 | `RENDER_FAILED`, `CAPTURE_FAILED`, `TEXT_EXTRACTION_FAILED`, `INTERNAL_ERROR` | 500  | Processing failed                                         |
 
 ## Configuration and limits
