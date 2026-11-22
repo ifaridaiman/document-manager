@@ -40,7 +40,11 @@ func main() {
 	if err := run(os.Args[1], os.Args[2:]); err != nil {
 		var e *de.Error
 		if errors.As(err, &e) {
-			json.NewEncoder(os.Stderr).Encode(map[string]any{"error": e})
+			out := map[string]any{"error": e}
+			if c := errors.Unwrap(e); c != nil {
+				out["cause"] = c.Error() // local CLI: show the underlying cause for debugging
+			}
+			json.NewEncoder(os.Stderr).Encode(out)
 		} else {
 			fmt.Fprintln(os.Stderr, "error:", err)
 		}
