@@ -305,9 +305,13 @@ go vet ./...
 cd npm/pdf-engine && npm run build:local && npm test
 ```
 
-Releases are published by GitHub Actions ([release.yml](.github/workflows/release.yml)) when a `v*` tag is pushed.
+Releases are published by GitHub Actions ([release.yml](.github/workflows/release.yml)) when a `v*` tag is pushed. Every version is recorded in [CHANGELOG.md](CHANGELOG.md):
 
-Contributions are welcome. Please open an issue to discuss larger changes first, keep PDF logic inside `documentengine`, and add a test for any new behavior.
+1. With each change, add a line under `## [Unreleased]` (Added, Changed, Removed, Fixed or Security).
+2. To release, rename that heading to `## [x.y.z] - YYYY-MM-DD`, add a new empty `## [Unreleased]` above it, and update the links at the bottom.
+3. Push the tag `vx.y.z`. The workflow fails before publishing if the version has no changelog section, and uses that section as the GitHub release notes.
+
+Contributions are welcome. Please open an issue to discuss larger changes first, keep PDF logic inside `documentengine`, add a test for any new behavior, and add a `CHANGELOG.md` line under `[Unreleased]`.
 
 ## Roadmap
 

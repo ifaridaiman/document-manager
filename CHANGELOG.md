@@ -1,0 +1,100 @@
+# Changelog
+
+All notable changes to document-manager are recorded here. One version number
+covers the Go module (`github.com/ifaridaiman/document-manager`) and the npm
+packages (`@documentmanager/pdf-engine` and its platform packages).
+
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
+the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+Before 1.0.0, a minor version (0.x.0) may include breaking changes; they are
+listed under **Changed** or **Removed**.
+
+**Releasing:** move the [Unreleased] entries into a new `## [x.y.z] - YYYY-MM-DD`
+section, update the links at the bottom, then push the tag `vx.y.z`. The release
+workflow stops before publishing anything if the tag has no section here, and
+uses the section as the GitHub release notes.
+
+## [Unreleased]
+
+### Added
+
+- `ENGINE_BUSY` error code. When every PDF worker is in use, the engine returns
+  it and the HTTP API answers `503 Service Unavailable` with `Retry-After: 1`.
+- Error causes: `Error` keeps the underlying error. Go callers can use
+  `errors.Unwrap`, `errors.Is` and `errors.As`, and `Error()` includes the cause
+  for logs. The HTTP server logs it; the CLI prints it on stderr.
+- `THIRD_PARTY_NOTICES.md` with the licenses of PDFium, the native libraries
+  inside it and every Go module compiled into the binary. It ships in every npm
+  package and GitHub release.
+
+### Changed
+
+- A full worker pool is reported as `ENGINE_BUSY` (HTTP 503) instead of
+  `RESOURCE_LIMIT` (HTTP 422). Clients should retry it.
+- Calls on one `Document` now run one at a time. Open one `Document` per
+  goroutine for parallel work.
+- The Go module requires Go 1.27.4 or newer.
+- A negative `Config` value is kept as given instead of being replaced by the
+  default.
+- The release workflow uses Node 24 versions of its GitHub Actions.
+
+### Removed
+
+- `Details["cause"]` in error responses. It exposed raw PDFium error text to API
+  clients; the cause is now logged server-side only.
+
+### Fixed
+
+- Data races when one `Document` was used from several goroutines, which could
+  corrupt captured images. The documentation wrongly said this was safe.
+- PDFs with a malformed timezone in their metadata dates (for example
+  `D:2024+5'`) failed to open with `INTERNAL_ERROR`. The date is now kept and the
+  malformed zone ignored.
+- npm: `instanceof PdfEngineError` failed when a bundler or hot reload loaded the
+  package twice, so engine errors surfaced as HTTP 500 in Next.js.
+
+### Security
+
+- Built with Go 1.27.4, which fixes GO-2026-6859 in `net/http`.
+
+## [0.2.0] - 2026-11-21
+
+Tagged in git only. This version was not published to npm; use the next release.
+
+### Added
+
+- `layout`: each page's text lines with their exact boxes, in the same 0–1
+  coordinates as `capture`. Available as `Document.Layout` (Go),
+  `POST /v1/layout` (HTTP), `pdf-engine layout` (CLI) and `engine.layout()`
+  (npm). Scanned pages return an empty list.
+
+### Changed
+
+- npm packages are released automatically by GitHub Actions when a `v*` tag is
+  pushed, with npm provenance.
+
+## [0.1.0] - 2026-11-21
+
+First release, published to npm by hand.
+
+### Added
+
+- Go engine (`documentengine`): open PDFs from memory, read metadata and page
+  info, extract page text, render pages and capture regions as PNG or JPEG.
+- Regions use normalized coordinates (0–1, top-left origin, page as displayed),
+  so rotated pages need no special handling.
+- Every capture returns an evidence reference: page, region, image size, DPI
+  and the text inside the region.
+- Limits on file size, page count, DPI, pixels per image, time per operation and
+  concurrent documents. PDFium runs as WebAssembly with no filesystem access.
+- Structured errors with stable codes.
+- CLI (`pdf-engine`) and HTTP API (`pdf-engine serve`).
+- npm package `@documentmanager/pdf-engine`, with one package per platform
+  (macOS arm64/x64, Linux x64/arm64, Windows x64).
+
+> The `v0.1.1` git tag points at the repository's first commit, which contains
+> only the README. It is not a release: skip it.
+
+[Unreleased]: https://github.com/ifaridaiman/document-manager/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/ifaridaiman/document-manager/releases/tag/v0.2.0
+[0.1.0]: https://www.npmjs.com/package/@documentmanager/pdf-engine/v/0.1.0
