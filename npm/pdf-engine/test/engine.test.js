@@ -60,6 +60,20 @@ test("layout boxes plug into capture", async () => {
   assert.match(c.reference.excerpt, /Revenue increased by 18%/);
 });
 
+// Bundlers and hot reload can evaluate the wrapper twice while the engine stays
+// shared on globalThis; instanceof must work against either copy's class.
+test("PdfEngineError instanceof across module copies", async () => {
+  const copy = await import("../src/index.js?second-copy");
+  assert.notEqual(copy.PdfEngineError, PdfEngineError, "test needs two module instances");
+  await assert.rejects(engine.inspect(new TextEncoder().encode("not a pdf")), (e) => {
+    assert.ok(e instanceof copy.PdfEngineError);
+    assert.ok(e instanceof PdfEngineError);
+    assert.ok(e instanceof Error);
+    return true;
+  });
+  assert.ok(!(new Error("plain") instanceof PdfEngineError));
+});
+
 test("structured errors", async () => {
   await assert.rejects(engine.capture(pdf, { page: 1, x: 0.5, y: 0, width: 0.8, height: 0.1 }), (e) => {
     assert.ok(e instanceof PdfEngineError);

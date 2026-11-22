@@ -59,8 +59,12 @@ func (s *Server) wrap(op string, h func(*call) error) http.HandlerFunc {
 		attrs := append([]any{"requestId", reqID, "op", op, "durationMs", time.Since(start).Milliseconds()}, c.log...)
 		if err != nil {
 			e := asErr(err)
+			if e.Code == de.ErrEngineBusy {
+				w.Header().Set("Retry-After", "1")
+			}
 			writeJSON(w, status(e.Code), map[string]any{"error": e})
-			s.Log.Warn("request failed", append(attrs, "success", false, "errorCode", e.Code)...)
+			// err.Error() includes the underlying cause: logged here, never sent to the client.
+			s.Log.Warn("request failed", append(attrs, "success", false, "errorCode", e.Code, "error", err.Error())...)
 			return
 		}
 		s.Log.Info("request ok", append(attrs, "success", true)...)
@@ -256,6 +260,8 @@ func status(c de.ErrorCode) int {
 		return http.StatusUnprocessableEntity
 	case de.ErrProcessingTimeout:
 		return http.StatusGatewayTimeout
+	case de.ErrEngineBusy:
+		return http.StatusServiceUnavailable
 	}
 	return http.StatusInternalServerError
 }

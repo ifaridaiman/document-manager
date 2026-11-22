@@ -139,12 +139,21 @@ func parsePDFDate(s string) *time.Time {
 	if err != nil {
 		return nil
 	}
-	if rest := s[n:]; len(rest) >= 3 && (rest[0] == '+' || rest[0] == '-') {
+	// Metadata is untrusted: a malformed zone keeps the date and drops the zone.
+	if rest := s[n:]; len(rest) > 0 && (rest[0] == '+' || rest[0] == '-') {
 		tz := strings.ReplaceAll(rest[1:], "'", "")
-		hh, _ := strconv.Atoi(tz[:2])
+		if len(tz) < 2 {
+			return &t
+		}
+		hh, err := strconv.Atoi(tz[:2])
+		if err != nil || hh > 23 {
+			return &t
+		}
 		mm := 0
 		if len(tz) >= 4 {
-			mm, _ = strconv.Atoi(tz[2:4])
+			if mm, err = strconv.Atoi(tz[2:4]); err != nil || mm > 59 {
+				return &t
+			}
 		}
 		off := hh*3600 + mm*60
 		if rest[0] == '-' {
@@ -156,13 +165,32 @@ func parsePDFDate(s string) *time.Time {
 }
 
 // Error is the structured error returned by every engine operation.
+//
+// Code, Message and Details are safe to show to API clients. The underlying
+// cause (a PDFium error, a recovered panic) is kept out of JSON; it is reachable
+// with errors.Unwrap / errors.Is / errors.As and included in Error() for logs.
 type Error struct {
 	Code    ErrorCode      `json:"code"`
 	Message string         `json:"message"`
 	Details map[string]any `json:"details,omitempty"`
+	cause   error
 }
 
-func (e *Error) Error() string { return fmt.Sprintf("%s: %s", e.Code, e.Message) }
+func (e *Error) Error() string {
+	if e.cause != nil {
+		return fmt.Sprintf("%s: %s: %v", e.Code, e.Message, e.cause)
+	}
+	return fmt.Sprintf("%s: %s", e.Code, e.Message)
+}
+
+// Unwrap returns the underlying cause, if any.
+func (e *Error) Unwrap() error { return e.cause }
+
+// wrap attaches the underlying cause and returns e.
+func (e *Error) wrap(cause error) *Error {
+	e.cause = cause
+	return e
+}
 
 type ErrorCode string
 
@@ -179,6 +207,7 @@ const (
 	ErrCaptureFailed        ErrorCode = "CAPTURE_FAILED"
 	ErrProcessingTimeout    ErrorCode = "PROCESSING_TIMEOUT"
 	ErrResourceLimit        ErrorCode = "RESOURCE_LIMIT"
+	ErrEngineBusy           ErrorCode = "ENGINE_BUSY" // every worker in use; retry later
 	ErrInternal             ErrorCode = "INTERNAL_ERROR"
 )
 
