@@ -65,7 +65,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## Go modules compiled into the binary
 
-### Go standard library (go1.27.3)
+### Go standard library (go1.27.4)
 
 ```
 Copyright 2009 The Go Authors.
