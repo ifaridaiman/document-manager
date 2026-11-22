@@ -25,6 +25,12 @@ func fixturePDF() []byte {
 		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
 		"<< /Title (Annual Report) /Author (ACME) /CreationDate (D:20240115093000+08'00') >>",
 	}
+	return buildPDF(objs, 7)
+}
+
+// buildPDF writes objs as objects 1..n with a correct xref; info is the object
+// number of the document info dictionary (0 for none).
+func buildPDF(objs []string, info int) []byte {
 	var b bytes.Buffer
 	b.WriteString("%PDF-1.4\n")
 	offsets := make([]int, len(objs))
@@ -37,7 +43,11 @@ func fixturePDF() []byte {
 	for _, off := range offsets {
 		fmt.Fprintf(&b, "%010d 00000 n \n", off)
 	}
-	fmt.Fprintf(&b, "trailer\n<< /Size %d /Root 1 0 R /Info 7 0 R >>\nstartxref\n%d\n%%%%EOF\n", len(objs)+1, xref)
+	infoRef := ""
+	if info > 0 {
+		infoRef = fmt.Sprintf(" /Info %d 0 R", info)
+	}
+	fmt.Fprintf(&b, "trailer\n<< /Size %d /Root 1 0 R%s >>\nstartxref\n%d\n%%%%EOF\n", len(objs)+1, infoRef, xref)
 	return b.Bytes()
 }
 
