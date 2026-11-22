@@ -17,6 +17,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Every release must be in CHANGELOG.md. Fails here, before anything is
+      # published, if the tag's version has no "## [x.y.z]" section.
+      - name: Release notes from CHANGELOG.md
+        run: sh scripts/changelog-section.sh "${GITHUB_REF_NAME#v}" > "$RUNNER_TEMP/notes.md"
+
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -61,4 +66,4 @@ jobs:
         run: |
           FLAGS=""
           case "$GITHUB_REF_NAME" in *-*) FLAGS="--prerelease" ;; esac
-          gh release create "$GITHUB_REF_NAME" npm/dist/release/* --generate-notes $FLAGS
+          gh release create "$GITHUB_REF_NAME" npm/dist/release/* --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md" $FLAGS
