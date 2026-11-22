@@ -2,6 +2,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -97,7 +98,6 @@ func run(cmd string, args []string) error {
 	switch cmd {
 	case "inspect":
 		m, _ := doc.Inspect()
-		_ = asJSON // inspect output is always JSON
 		return printJSON(map[string]any{"filename": doc.Filename, "pageCount": m.PageCount, "size": doc.Size, "metadata": m})
 	case "text":
 		t, err := doc.ExtractText(ctx, *page)
@@ -120,7 +120,7 @@ func run(cmd string, args []string) error {
 		if err != nil {
 			return err
 		}
-		out := orDefault(*output, fmt.Sprintf("page-%d.%s", *page, *format))
+		out := cmp.Or(*output, fmt.Sprintf("page-%d.%s", *page, *format))
 		if err := os.WriteFile(out, res.Image, 0o644); err != nil {
 			return err
 		}
@@ -130,7 +130,7 @@ func run(cmd string, args []string) error {
 		if err != nil {
 			return err
 		}
-		out := orDefault(*output, "evidence."+*format)
+		out := cmp.Or(*output, "evidence."+*format)
 		if err := os.WriteFile(out, res.Image, 0o644); err != nil {
 			return err
 		}
@@ -180,13 +180,6 @@ func parseInterspersed(fs *flag.FlagSet, args []string) []string {
 		pos = append(pos, fs.Arg(0))
 		args = fs.Args()[1:]
 	}
-}
-
-func orDefault(s, def string) string {
-	if s == "" {
-		return def
-	}
-	return s
 }
 
 func printJSON(v any) error {
