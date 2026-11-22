@@ -105,6 +105,7 @@ func (e *Engine) OpenBytes(ctx context.Context, filename string, data []byte) (*
 		Size:     int64(len(data)),
 		engine:   e,
 		inst:     inst,
+		turn:     make(chan struct{}, 1),
 	}
 	err = d.do(ctx, func() error {
 		res, err := inst.OpenDocument(&requests.OpenDocument{File: &data})
@@ -134,7 +135,8 @@ func openErr(err error) error {
 	}
 }
 
-// Document is an open PDF. Methods are safe for concurrent use.
+// Document is an open PDF. Methods are safe for concurrent use, but calls on one
+// Document run one at a time. For parallel work, open one Document per goroutine.
 type Document struct {
 	ID       string           `json:"id"`
 	Filename string           `json:"filename"`
@@ -144,7 +146,8 @@ type Document struct {
 	engine *Engine
 	inst   pdfium.Pdfium
 	doc    references.FPDF_DOCUMENT
-	mu     sync.Mutex
+	turn   chan struct{} // capacity 1: one PDFium operation at a time (see do)
+	mu     sync.Mutex    // guards dead
 	dead   bool
 }
 
@@ -401,17 +404,31 @@ func (d *Document) withPage(n int, fn func(p requests.Page) error) error {
 
 // do runs fn with the configured timeout. On timeout the wasm instance is
 // killed (a hostile PDF can't keep burning CPU) and the document becomes unusable.
+//
+// Operations on one Document run one at a time: PDFium is single-threaded per
+// instance, and go-pdfium frees render buffers outside its own lock, so
+// overlapping calls race. Waiting for the turn honours ctx but never kills the
+// worker: a queued call is not hung work.
 func (d *Document) do(ctx context.Context, fn func() error) error {
+	select {
+	case d.turn <- struct{}{}:
+	case <-ctx.Done():
+		return newErr(ErrProcessingTimeout, "cancelled while waiting for the document")
+	}
 	d.mu.Lock()
 	dead := d.dead
 	d.mu.Unlock()
 	if dead {
+		<-d.turn
 		return newErr(ErrInternal, "document is closed")
 	}
 	ctx, cancel := context.WithTimeout(ctx, d.engine.cfg.Timeout)
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
+		// Released only when fn really returns, even after a timeout, so the next
+		// operation never overlaps work that is still unwinding.
+		defer func() { <-d.turn }()
 		defer func() {
 			if r := recover(); r != nil {
 				done <- newErr(ErrInternal, "PDF processing crashed")
@@ -433,8 +450,17 @@ func (d *Document) do(ctx context.Context, fn func() error) error {
 	}
 }
 
-// Close releases the document and its worker. Safe to call more than once.
+// Close releases the document and its worker. Safe to call more than once and
+// concurrently with other methods: it waits for a running operation to finish.
 func (d *Document) Close() error {
+	d.mu.Lock()
+	dead := d.dead
+	d.mu.Unlock()
+	if dead {
+		return nil // already closed, or killed after a timeout (worker already freed)
+	}
+	d.turn <- struct{}{}
+	defer func() { <-d.turn }()
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.dead {
