@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/klippa-app/go-pdfium/requests"
+	"github.com/klippa-app/go-pdfium/responses"
 )
 
 // TextLine is one run of text as PDFium groups it (usually a line), with its
@@ -36,6 +37,7 @@ func (d *Document) Layout(ctx context.Context, pageNumber int) (PageLayout, erro
 			if err != nil {
 				return newErr(ErrTextExtractionFailed, "cannot read page size", "pageNumber", pageNumber)
 			}
+			// Lines starts non-nil so a scanned page encodes as [] in JSON, not null.
 			out = PageLayout{PageNumber: pageNumber, Width: size.Width, Height: size.Height, Lines: []TextLine{}}
 			if rot, err := d.inst.FPDFPage_GetRotation(&requests.FPDFPage_GetRotation{Page: p}); err == nil {
 				out.Rotation = int(rot.PageRotation) * 90
@@ -47,24 +49,32 @@ func (d *Document) Layout(ctx context.Context, pageNumber int) (PageLayout, erro
 			}
 			defer d.inst.FPDFText_ClosePage(&requests.FPDFText_ClosePage{TextPage: tp.TextPage})
 
-			n, err := d.inst.FPDFText_CountRects(&requests.FPDFText_CountRects{TextPage: tp.TextPage, StartIndex: 0, Count: -1})
-			if err != nil || n.Count <= 0 {
-				return nil // no text layer
+			n, err := d.inst.FPDFText_CountRects(&requests.FPDFText_CountRects{TextPage: tp.TextPage, Count: -1})
+			if err != nil {
+				return nil // no usable text layer: empty Lines
 			}
 
-			// PDF user space → display space. PageToDevice flips y, applies the page
-			// rotation and any MediaBox offset; dividing by the device size normalizes.
-			const scale = 100 // device units per point
+			// box maps a PDFium text rect (PDF user space: points, origin bottom-left)
+			// to a normalized Region (0..1, origin top-left, page as displayed).
+			// PageToDevice does the y-flip, page rotation and any MediaBox offset.
+			const scale = 100 // device units per point, for sub-point precision
 			sx, sy := int(math.Round(size.Width*scale)), int(math.Round(size.Height*scale))
-			toNorm := func(px, py float64) (float64, float64, bool) {
-				res, err := d.inst.FPDF_PageToDevice(&requests.FPDF_PageToDevice{Page: p, SizeX: sx, SizeY: sy, PageX: px, PageY: py})
-				if err != nil {
-					return 0, 0, false
+			box := func(r *responses.FPDFText_GetRect) (Region, bool) {
+				a, err1 := d.inst.FPDF_PageToDevice(&requests.FPDF_PageToDevice{Page: p, SizeX: sx, SizeY: sy, PageX: r.Left, PageY: r.Top})
+				b, err2 := d.inst.FPDF_PageToDevice(&requests.FPDF_PageToDevice{Page: p, SizeX: sx, SizeY: sy, PageX: r.Right, PageY: r.Bottom})
+				if err1 != nil || err2 != nil {
+					return Region{}, false
 				}
-				return float64(res.DeviceX) / float64(sx), float64(res.DeviceY) / float64(sy), true
+				// Rotation can swap which corner is top-left, hence min/max. Clamp to the
+				// page; a box entirely off-page ends up with w or h <= 0 and is dropped.
+				x0 := max(0, float64(min(a.DeviceX, b.DeviceX))/float64(sx))
+				y0 := max(0, float64(min(a.DeviceY, b.DeviceY))/float64(sy))
+				w := min(1, float64(max(a.DeviceX, b.DeviceX))/float64(sx)) - x0
+				h := min(1, float64(max(a.DeviceY, b.DeviceY))/float64(sy)) - y0
+				return Region{X: x0, Y: y0, Width: w, Height: h}, w > 0 && h > 0
 			}
 
-			for i := 0; i < n.Count; i++ {
+			for i := range n.Count { // a negative Count (PDFium's error value) runs zero times
 				r, err := d.inst.FPDFText_GetRect(&requests.FPDFText_GetRect{TextPage: tp.TextPage, Index: i})
 				if err != nil {
 					continue
@@ -76,25 +86,11 @@ func (d *Document) Layout(ctx context.Context, pageNumber int) (PageLayout, erro
 					continue
 				}
 				text := strings.TrimSpace(bt.Text)
-				if text == "" {
-					continue
+				region, ok := box(r)
+				if text == "" || !ok {
+					continue // whitespace-only or off-page runs are not citable
 				}
-				x1, y1, ok1 := toNorm(r.Left, r.Top)
-				x2, y2, ok2 := toNorm(r.Right, r.Bottom)
-				if !ok1 || !ok2 {
-					continue
-				}
-				// Clamp to the page; a box entirely off-page ends up with w or h <= 0.
-				x0, y0 := max(0, min(x1, x2)), max(0, min(y1, y2))
-				w, h := min(1, max(x1, x2))-x0, min(1, max(y1, y2))-y0
-				if w <= 0 || h <= 0 {
-					continue
-				}
-				out.Lines = append(out.Lines, TextLine{
-					Index:  len(out.Lines),
-					Text:   text,
-					Region: Region{X: x0, Y: y0, Width: w, Height: h},
-				})
+				out.Lines = append(out.Lines, TextLine{Index: len(out.Lines), Text: text, Region: region})
 			}
 			return nil
 		})
