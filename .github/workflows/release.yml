@@ -1,69 +1,179 @@
-# Publishes the npm packages and a GitHub release when a tag like v0.2.0 is pushed.
-# Uses npm trusted publishing (GitHub OIDC): no NPM_TOKEN secret. Each package must
-# list this repo + release.yml as a trusted publisher on npmjs.com.
+# Publishes to npm, then tags and creates the GitHub Release. Pushing a tag does NOT
+# publish anything. Two ways in, both from main only, both owner-only:
+#   - stable: merging the release PR (it changes .release-please-manifest.json)
+#   - prerelease: Actions > release > Run workflow, version x.y.z-beta.N or x.y.z-next.N
+# Order: plan (validate, refuse collisions) > full CI on this commit, building the
+# tarballs > owner approves the npm-production environment > publish > GitHub Release.
+# Every step is safe to re-run: published packages and existing releases are skipped.
+# Uses npm trusted publishing (OIDC): no npm token is stored anywhere. See docs/RELEASE.md.
 name: release
 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+    paths: [.release-please-manifest.json]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Prerelease version (x.y.z-beta.N or x.y.z-next.N). Leave empty to (re)run the stable release of the version in .release-please-manifest.json."
+        type: string
+        default: ""
 
-permissions:
-  contents: write # GitHub release
-  id-token: write # npm trusted publishing + provenance
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  release:
+  plan:
+    name: Plan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      skip: ${{ steps.plan.outputs.skip }}
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+      dist_tag: ${{ steps.plan.outputs.dist_tag }}
+      prerelease: ${{ steps.plan.outputs.prerelease }}
     steps:
-      - uses: actions/checkout@v7
-
-      # Every release must be in CHANGELOG.md. Fails here, before anything is
-      # published, if the tag's version has no "## [x.y.z]" section.
-      - name: Release notes from CHANGELOG.md
-        run: sh scripts/changelog-section.sh "${GITHUB_REF_NAME#v}" > "$RUNNER_TEMP/notes.md"
-
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          go-version-file: go.mod
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: node scripts/release-plan.mjs
 
-      - uses: actions/setup-node@v7
+  ci:
+    name: CI
+    needs: plan
+    if: needs.plan.outputs.skip == 'false'
+    uses: ./.github/workflows/ci.yml
+    with:
+      version: ${{ needs.plan.outputs.version }}
+    permissions:
+      contents: read
+
+  publish:
+    name: Publish to npm
+    needs: [plan, ci]
+    runs-on: ubuntu-latest
+    # Required reviewer (the owner) and a main-only branch policy live on this
+    # environment; npm's trusted publisher config is pinned to it as well.
+    environment:
+      name: npm-production
+      url: https://www.npmjs.com/package/@documentmanager/pdf-engine/v/${{ needs.plan.outputs.version }}
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing + provenance; only this job has it
+    steps:
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
-
-      # Trusted publishing needs a recent npm CLI.
-      - run: npm install -g npm@latest
-
-      - name: Go tests
-        run: go test ./...
-
-      - name: Build binaries (all platforms)
-        working-directory: npm/pdf-engine
-        run: npm run build
-
-      - name: Wrapper tests
-        working-directory: npm/pdf-engine
-        run: npm test
-
-      - name: Prepare packages
-        working-directory: npm/pdf-engine
-        run: npm run prepare-release -- "${GITHUB_REF_NAME#v}"
-
-      - name: Publish to npm
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          TAG=latest
-          case "$VERSION" in *-*) TAG=next ;; esac # 0.2.0-beta.1 → "next"
-          # Platform packages first, so the main package never points at missing versions.
-          for dir in npm/dist/pdf-engine-*/; do
-            npm publish "$dir" --access public --provenance --tag "$TAG"
-          done
-          npm publish npm/pdf-engine --access public --provenance --tag "$TAG"
-
-      - name: GitHub release
+      - name: npm CLI with trusted publishing (needs >= 11.5.1)
+        run: npm install -g npm@11.21.3
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: npm-packages
+          path: dist
+      # Check all six before publishing any: a version that is already on npm from
+      # another commit stops the run here, not halfway through.
+      - name: Check what is already on npm
         env:
-          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          SHA: ${{ github.sha }}
         run: |
-          FLAGS=""
-          case "$GITHUB_REF_NAME" in *-*) FLAGS="--prerelease" ;; esac
-          gh release create "$GITHUB_REF_NAME" npm/dist/release/* --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md" $FLAGS
+          set -euo pipefail
+          cd dist/tarballs
+          main="documentmanager-pdf-engine-$VERSION.tgz"
+          [ -f "$main" ] || { echo "::error::missing $main"; exit 1; }
+          : > "$RUNNER_TEMP/to-publish"
+          # Platform packages first, main last: the main package must never point at missing versions.
+          for tgz in $(ls -- *.tgz | grep -vxF "$main") "$main"; do
+            spec=$(tar -xOzf "$tgz" package/package.json | node -e 'const p = JSON.parse(require("fs").readFileSync(0)); console.log(`${p.name}@${p.version}`)')
+            [ "${spec##*@}" = "$VERSION" ] || { echo "::error::$tgz contains $spec, expected version $VERSION"; exit 1; }
+            if head=$(npm view "$spec" gitHead 2>/dev/null); then
+              if [ "$head" = "$SHA" ]; then echo "$spec: already published from this commit, skipping"; continue; fi
+              echo "::error::$spec is already on npm, built from ${head:-an unknown commit}, not $SHA"; exit 1
+            fi
+            echo "$spec: will publish"
+            echo "$tgz" >> "$RUNNER_TEMP/to-publish"
+          done
+      - name: Publish
+        env:
+          DIST_TAG: ${{ needs.plan.outputs.dist_tag }}
+        run: |
+          set -euo pipefail
+          cd dist/tarballs
+          # "./" matters: a bare "dir/name" is read as a GitHub repo (github:dir/name).
+          while read -r tgz; do
+            npm publish "./$tgz" --access public --provenance --tag "$DIST_TAG" --ignore-scripts
+          done < "$RUNNER_TEMP/to-publish"
+
+  github-release:
+    name: GitHub Release
+    needs: [plan, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the tag and release
+      pull-requests: write # mark the release PR as tagged
+      issues: write # create that label if missing
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.plan.outputs.version }}
+      TAG: ${{ needs.plan.outputs.tag }}
+      DIST_TAG: ${{ needs.plan.outputs.dist_tag }}
+      PRERELEASE: ${{ needs.plan.outputs.prerelease }}
+      SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: npm-packages
+          path: dist
+      - name: Release notes
+        run: |
+          set -euo pipefail
+          {
+            if [ "$PRERELEASE" = true ]; then
+              echo "Prerelease. Install with \`npm install @documentmanager/pdf-engine@$DIST_TAG\`."
+            else
+              sh scripts/changelog-section.sh "$VERSION"
+            fi
+            echo
+            echo "npm: https://www.npmjs.com/package/@documentmanager/pdf-engine/v/$VERSION"
+            echo "Commit: $SHA"
+          } > "$RUNNER_TEMP/notes.md"
+      - name: Create the tag and release (or update a partial one)
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/release/* --clobber
+            gh release edit "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
+          elif [ "$PRERELEASE" = true ]; then
+            gh release create "$TAG" dist/release/* --target "$SHA" --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" --prerelease --generate-notes
+          else
+            gh release create "$TAG" dist/release/* --target "$SHA" --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" --latest
+          fi
+      # Release Please opens no new release PR while a merged one is still "pending".
+      - name: Mark the release PR as tagged
+        if: needs.plan.outputs.prerelease == 'false'
+        run: |
+          set -euo pipefail
+          pr=$(gh pr list --state merged --label "autorelease: pending" --json number,mergeCommit \
+            --jq ".[] | select(.mergeCommit.oid == \"$SHA\") | .number")
+          if [ -n "$pr" ]; then
+            gh label create "autorelease: tagged" --color ededed --force
+            gh pr edit "$pr" --remove-label "autorelease: pending" --add-label "autorelease: tagged"
+          fi

@@ -1,0 +1,41 @@
+# Keeps one release PR open on main: next version (from Conventional Commits),
+# CHANGELOG.md, .release-please-manifest.json and npm/pdf-engine/package.json(+lock).
+# It never tags, releases or publishes (skip-github-release); merging the release PR
+# starts release.yml, which waits for owner approval before publishing.
+name: release-please
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-pr:
+    name: Release PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the release-please--branches--main branch
+      pull-requests: write # open/update the release PR
+      issues: write # create its labels
+      actions: write # dispatch ci.yml on it (see below)
+    steps:
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        id: rp
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+      # PRs pushed with GITHUB_TOKEN do not trigger pull_request workflows, so the
+      # release PR would never get its required checks. workflow_dispatch is the
+      # exception: run CI on the release branch head so the checks attach to it.
+      - name: Run CI on the release PR
+        if: steps.rp.outputs.pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ fromJSON(steps.rp.outputs.pr).headBranchName }}
+        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
