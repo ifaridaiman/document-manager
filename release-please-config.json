@@ -1,0 +1,32 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/v17.11.2/schemas/config.json",
+  "release-type": "simple",
+  "include-component-in-tag": false,
+  "include-v-in-tag": true,
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": false,
+  "skip-github-release": true,
+  "pull-request-title-pattern": "chore: release ${version}",
+  "pull-request-header": ":robot: Release PR. Merging it starts `.github/workflows/release.yml`, which publishes to npm **after owner approval** of the `npm-production` environment. Edit the CHANGELOG here before merging if wording needs work. See docs/RELEASE.md.",
+  "changelog-sections": [
+    { "type": "feat", "section": "Features" },
+    { "type": "fix", "section": "Bug Fixes" },
+    { "type": "perf", "section": "Performance" },
+    { "type": "revert", "section": "Reverts" },
+    { "type": "refactor", "section": "Refactoring", "hidden": true },
+    { "type": "docs", "section": "Documentation", "hidden": true },
+    { "type": "test", "section": "Tests", "hidden": true },
+    { "type": "build", "section": "Build", "hidden": true },
+    { "type": "ci", "section": "CI", "hidden": true },
+    { "type": "chore", "section": "Chores", "hidden": true }
+  ],
+  "packages": {
+    ".": {
+      "extra-files": [
+        { "type": "json", "path": "npm/pdf-engine/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "npm/pdf-engine/package-lock.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "npm/pdf-engine/package-lock.json", "jsonpath": "$.packages[''].version" }
+      ]
+    }
+  }
+}

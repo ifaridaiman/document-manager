@@ -1,6 +1,6 @@
 {
   "name": "@documentmanager/pdf-engine",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "Stateless PDF inspect, text, render and region-capture engine (Go + PDFium) for Node.js",
   "license": "MIT",
   "repository": {
@@ -31,19 +31,17 @@
     "THIRD_PARTY_NOTICES.md"
   ],
   "engines": {
-    "node": ">=20.6"
-  },
-  "optionalDependencies": {
-    "@documentmanager/pdf-engine-darwin-arm64": "0.1.0",
-    "@documentmanager/pdf-engine-darwin-x64": "0.1.0",
-    "@documentmanager/pdf-engine-linux-x64": "0.1.0",
-    "@documentmanager/pdf-engine-linux-arm64": "0.1.0",
-    "@documentmanager/pdf-engine-win32-x64": "0.1.0"
+    "node": ">=22"
   },
   "scripts": {
     "build": "sh scripts/build-binaries.sh",
     "build:local": "sh scripts/build-binaries.sh local",
     "prepare-release": "node scripts/prepare-release.mjs",
+    "typecheck": "tsc -p .",
     "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "typescript": "7.0.2"
   }
 }

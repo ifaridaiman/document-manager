@@ -3,8 +3,6 @@
 # Pure Go (PDFium runs as embedded wasm), so CGO_ENABLED=0 cross-builds work from any host.
 #   sh scripts/build-binaries.sh         # all targets
 #   sh scripts/build-binaries.sh local   # current machine only
-# ponytail: one package carries every binary (~15 MB each); split into per-platform
-# optionalDependencies (esbuild-style) once install size matters.
 set -eu
 cd "$(dirname "$0")/.."
 ROOT=../..

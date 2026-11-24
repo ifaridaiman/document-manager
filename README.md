@@ -218,6 +218,22 @@ try {
 }
 ```
 
+Supported runtimes and platforms (each one is installed and run in CI on its own hardware before every release):
+
+| Runtime | Supported |
+| --- | --- |
+| Node.js | 22, 24, 26 (`engines: >=22`), ESM (`import`) |
+| Next.js | Node.js runtime (route handlers, server actions) |
+| Browser, Edge runtime, Deno, Bun | Not supported (the wrapper spawns a native binary) |
+
+| OS | CPU | npm package |
+| --- | --- | --- |
+| macOS | arm64, x64 | `@documentmanager/pdf-engine-darwin-arm64`, `-darwin-x64` |
+| Linux | x64, arm64 | `@documentmanager/pdf-engine-linux-x64`, `-linux-arm64` |
+| Windows | x64 | `@documentmanager/pdf-engine-win32-x64` |
+
+CI tests Linux on Ubuntu (glibc). The binary is static, so Alpine (musl) should work, but it isn't tested. Other platforms (Windows arm64, FreeBSD, 32-bit) have no binary; set `PDF_ENGINE_BIN` to one you built with `go build ./cmd/pdf-engine`. Installing with `--no-optional` or `--omit=optional` skips the binary.
+
 - Server-side only: Node route handlers and server actions, not the browser or Edge runtime.
 - In Next.js, add `serverExternalPackages: ["@documentmanager/pdf-engine"]` to `next.config`.
 - Set `PDF_ENGINE_BIN` to use your own binary, or `createEngine({ maxMb, workers, timeout, logs })` for a custom instance.
@@ -302,16 +318,14 @@ npm/pdf-engine/   npm wrapper, binary build and release scripts
 ```bash
 go test ./...   # engine tests, using PDFs generated in the test
 go vet ./...
-cd npm/pdf-engine && npm run build:local && npm test
+cd npm/pdf-engine && npm ci && npm run typecheck && npm run build:local && npm test
 ```
 
-Releases are published by GitHub Actions ([release.yml](.github/workflows/release.yml)) when a `v*` tag is pushed. Every version is recorded in [CHANGELOG.md](CHANGELOG.md):
+CI ([ci.yml](.github/workflows/ci.yml)) runs on every pull request: Go lint, vet, govulncheck and race tests, the wrapper tests on Node 22/24/26, and an install test of the real npm tarballs on every supported platform.
 
-1. With each change, add a line under `## [Unreleased]` (Added, Changed, Removed, Fixed or Security).
-2. To release, rename that heading to `## [x.y.z] - YYYY-MM-DD`, add a new empty `## [Unreleased]` above it, and update the links at the bottom.
-3. Push the tag `vx.y.z`. The workflow fails before publishing if the version has no changelog section, and uses that section as the GitHub release notes.
+Releases are prepared by [Release Please](https://github.com/googleapis/release-please) from Conventional Commit PR titles and published to npm by [release.yml](.github/workflows/release.yml) after owner approval, using npm trusted publishing with provenance. Every version is recorded in [CHANGELOG.md](CHANGELOG.md). The full process, recovery steps and troubleshooting are in [docs/RELEASE.md](docs/RELEASE.md).
 
-Contributions are welcome. Please open an issue to discuss larger changes first, keep PDF logic inside `documentengine`, add a test for any new behavior, and add a `CHANGELOG.md` line under `[Unreleased]`.
+Contributions are welcome. Please open an issue to discuss larger changes first, keep PDF logic inside `documentengine`, add a test for any new behavior, and give the PR a [Conventional Commit](https://www.conventionalcommits.org/) title (`fix: ...`, `feat: ...`); it becomes the changelog entry.
 
 ## Roadmap
 

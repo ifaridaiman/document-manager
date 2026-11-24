@@ -59,7 +59,7 @@ function freePort() {
     s.unref();
     s.on("error", reject);
     s.listen(0, "127.0.0.1", () => {
-      const { port } = s.address();
+      const { port } = /** @type {import("node:net").AddressInfo} */ (s.address());
       s.close(() => resolve(port));
     });
   });
@@ -139,7 +139,7 @@ export function createEngine(options = {}) {
       const h = (k) => Number(res.headers.get(k));
       return {
         image: Buffer.from(await res.arrayBuffer()),
-        mimeType: res.headers.get("content-type"),
+        mimeType: res.headers.get("content-type") ?? "",
         width: h("x-image-width"),
         height: h("x-image-height"),
         pageNumber: h("x-page-number"),

@@ -62,7 +62,7 @@ func (s *Server) wrap(op string, h func(*call) error) http.HandlerFunc {
 			if e.Code == de.ErrEngineBusy {
 				w.Header().Set("Retry-After", "1")
 			}
-			writeJSON(w, status(e.Code), map[string]any{"error": e})
+			_ = writeJSON(w, status(e.Code), map[string]any{"error": e})
 			// err.Error() includes the underlying cause: logged here, never sent to the client.
 			s.Log.Warn("request failed", append(attrs, "success", false, "errorCode", e.Code, "error", err.Error())...)
 			return

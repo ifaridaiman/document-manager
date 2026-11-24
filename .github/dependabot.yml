@@ -1,0 +1,28 @@
+# Weekly dependency PRs. Titles are Conventional Commits, so Release Please treats Go
+# module bumps (compiled into the shipped binary) as fixes and the rest as chores.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule: { interval: weekly }
+    commit-message: { prefix: fix, include: scope } # fix(deps): ...
+    groups:
+      go: { patterns: ["*"] }
+
+  - package-ecosystem: npm
+    directory: /npm/pdf-engine # devDependencies only; the package has no runtime deps
+    schedule: { interval: weekly }
+    commit-message: { prefix: chore, include: scope }
+    groups:
+      dev: { patterns: ["*"] }
+    ignore:
+      # Types must match the oldest supported Node (engines: >=22).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    commit-message: { prefix: ci }
+    groups:
+      actions: { patterns: ["*"] }

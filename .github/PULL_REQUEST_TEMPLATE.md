@@ -53,7 +53,7 @@ Closes #
 
 - [ ] README updated
 - [ ] API documentation updated
-- [ ] CHANGELOG updated (if applicable)
+- [ ] PR title is a Conventional Commit (`fix:`, `feat:`, `feat!:` ...). It becomes the CHANGELOG entry and picks the next version.
 
 ## Reviewer checklist
 
