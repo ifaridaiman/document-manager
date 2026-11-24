@@ -1,0 +1,25 @@
+# golangci-lint v2. CI pins the binary version in .github/workflows/ci.yml.
+version: "2"
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  settings:
+    errcheck:
+      # Best-effort cleanup whose failure has no recovery: PDFium page/document
+      # handles, killing a timed-out worker, writing to a client that has gone,
+      # and multipart temp-file removal.
+      exclude-functions:
+        - (github.com/klippa-app/go-pdfium.Pdfium).FPDF_ClosePage
+        - (github.com/klippa-app/go-pdfium.Pdfium).FPDFText_ClosePage
+        - (github.com/klippa-app/go-pdfium.Pdfium).FPDF_CloseDocument
+        - (github.com/klippa-app/go-pdfium.Pdfium).Kill
+        - (net/http.ResponseWriter).Write
+        - (*mime/multipart.Form).RemoveAll
+        - (*mime/multipart.Writer).Close
+        - (io.Writer).Write
+  exclusions:
+    presets:
+      - std-error-handling # unchecked Close/Flush/os.Remove* and fmt.Fprint*
+      - common-false-positives
+formatters:
+  enable:
+    - gofmt

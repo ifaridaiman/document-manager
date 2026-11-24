@@ -44,7 +44,7 @@ func main() {
 			if c := errors.Unwrap(e); c != nil {
 				out["cause"] = c.Error() // local CLI: show the underlying cause for debugging
 			}
-			json.NewEncoder(os.Stderr).Encode(out)
+			_ = json.NewEncoder(os.Stderr).Encode(out)
 		} else {
 			fmt.Fprintln(os.Stderr, "error:", err)
 		}
@@ -158,13 +158,13 @@ func serve(eng *de.Engine, addr string, parentPipe bool) error {
 	defer stop()
 	if parentPipe {
 		// The parent holds our stdin open; EOF means it died, even via SIGKILL.
-		go func() { io.Copy(io.Discard, os.Stdin); stop() }()
+		go func() { _, _ = io.Copy(io.Discard, os.Stdin); stop() }()
 	}
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		srv.Shutdown(shutdown)
+		_ = srv.Shutdown(shutdown)
 	}()
 	log.Info("listening", "addr", addr)
 	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
@@ -177,7 +177,7 @@ func serve(eng *de.Engine, addr string, parentPipe bool) error {
 func parseInterspersed(fs *flag.FlagSet, args []string) []string {
 	var pos []string
 	for {
-		fs.Parse(args)
+		_ = fs.Parse(args) // ExitOnError: never returns an error
 		if fs.NArg() == 0 {
 			return pos
 		}
